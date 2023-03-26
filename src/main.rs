@@ -271,7 +271,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // TODO: Get directory from args
     let mut app = App::new();
-    app.read_dir("./", 0, 3);
+    app.read_dir("./", 0, 2);
 
     let res = run_app(&mut terminal, app, tick_rate);
 
