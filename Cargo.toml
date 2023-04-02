@@ -8,3 +8,7 @@ edition = "2021"
 [dependencies]
 tui = "0.19.0"
 crossterm = "0.26"
+
+[[bin]]
+name = "sample"
+path = "./bin/sample.rs"

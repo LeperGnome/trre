@@ -141,8 +141,7 @@ use crossterm::{
 };
 use std::{
     error::Error,
-    io,
-    fs,
+    fs, io,
     time::{Duration, Instant},
 };
 use tui::{
@@ -231,12 +230,12 @@ impl App {
     }
 
     fn read_dir(&mut self, root: &str, depth: usize, max_depth: usize) {
-        let mut paths = fs::read_dir(root).unwrap().peekable();  // TODO
+        let mut paths = fs::read_dir(root).unwrap().peekable(); // TODO
         while let Some(tree_el) = paths.next() {
             let tree_el = tree_el.unwrap();
             let name = tree_el.file_name().into_string().unwrap();
             let path = tree_el.path();
-            let path = path.to_str().unwrap();  // TODO
+            let path = path.to_str().unwrap(); // TODO
 
             match tree_el.file_type() {
                 Ok(t) => {
@@ -248,15 +247,14 @@ impl App {
                         is_last: !paths.peek().is_some(),
                     });
                     if depth != max_depth && t.is_dir() {
-                        self.read_dir(path, depth+1, max_depth)
+                        self.read_dir(path, depth + 1, max_depth)
                     }
-                },
+                }
                 Err(_) => continue,
             }
         }
     }
 }
-
 
 fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
@@ -309,7 +307,7 @@ fn run_app<B: Backend>(
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                     KeyCode::Left => app.items.unselect(),
                     KeyCode::Down | KeyCode::Char('j') => app.items.next(),
-                    KeyCode::Up | KeyCode::Char('k')=> app.items.previous(),
+                    KeyCode::Up | KeyCode::Char('k') => app.items.previous(),
                     _ => {}
                 }
             }
