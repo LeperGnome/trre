@@ -9,10 +9,7 @@ use std::{
 use crossterm::{
     cursor,
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    queue,
-    style,
-    terminal,
+    execute, queue, style, terminal,
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
         LeaveAlternateScreen,
@@ -148,7 +145,8 @@ impl DirInfo {
         }
     }
 
-    fn get_child_by_location(&mut self, mut loc: Location) -> &mut Box<Node> {  // TODO can error
+    fn get_child_by_location(&mut self, mut loc: Location) -> &mut Box<Node> {
+        // TODO can error
         self.read_children();
         match self.children {
             Children::Some(ref mut chs) => {
@@ -158,7 +156,7 @@ impl DirInfo {
                         _ => panic!("Not a directory"),
                     }
                 } else {
-                    return &mut chs.list[chs.current]; // TODO: if let get_mut? 
+                    return &mut chs.list[chs.current]; // TODO: if let get_mut?
                 }
             }
             Children::None | Children::Unread => panic!("no such child"), // TODO
@@ -241,21 +239,46 @@ where
         cursor::MoveTo(0, 0)
     )?;
 
-    fn render_children<W: io::Write>(w: &mut W, chs: &Children, depth: usize) -> io::Result<()> {
+    fn render_children<W: io::Write>(
+        w: &mut W,
+        chs: &Children,
+        mut loc: Location,
+        depth: usize,
+        highlight_current: bool,
+    ) -> io::Result<()> {
         queue!(w, style::ResetColor)?;
         if let Children::Some(chs) = chs {
+            let cur_loc = loc.pop_front();
             for (idx, ch) in chs.list.iter().enumerate() {
-                if idx == chs.current {
-                    queue!(w, style::SetBackgroundColor(style::Color::Black))?;
+                if idx == chs.current && highlight_current {
+                    queue!(
+                        w,
+                        style::SetBackgroundColor(style::Color::White),
+                        style::SetForegroundColor(style::Color::Black)
+                    )?;
                 }
                 match **ch {
-                    Node::Dir(ref dir) => { 
-                        println!("{}dir: {}\r", "    ".repeat(depth), dir.name);
-                        render_children(w, &dir.children, depth+1)?; 
-                    },
-                    Node::File(ref f) =>  { 
-                        println!("{}file: {}\r", "    ".repeat(depth), f.name); 
-                    },
+                    Node::Dir(ref dir) => {
+                        queue!(
+                            w,
+                            style::Print(format!("{}dir: {}", "    ".repeat(depth), dir.name)),
+                            cursor::MoveToNextLine(1),
+                        )?;
+                        let highlight_next;
+                        if let Some(l) = cur_loc {
+                            highlight_next = l == idx;
+                        } else {
+                            highlight_next = false;
+                        }
+                        render_children(w, &dir.children, loc.clone(), depth + 1, highlight_next)?;
+                    }
+                    Node::File(ref f) => {
+                        queue!(
+                            w,
+                            style::Print(format!("{}file: {}", "    ".repeat(depth), f.name)),
+                            cursor::MoveToNextLine(1),
+                        )?;
+                    }
                 }
                 queue!(w, style::ResetColor)?;
             }
@@ -263,7 +286,7 @@ where
         Ok(())
     }
 
-    render_children(w, &app.root.children, 0)?;
+    render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
 
     w.flush()?;
     Ok(())
@@ -287,20 +310,17 @@ where
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                     KeyCode::Left | KeyCode::Char('h') => {
                         _ = app.loc.pop_back();
-                        // match **app.root.get_child_by_location(app.loc.clone()){
-                        //     Node::Dir(ref mut d) => { d.collapse() },
-                        //     Node::File(_) => panic!("cannot move into file"),
-                        // };
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
-                        match **app.root.get_child_by_location(app.loc.clone()){
-                            Node::Dir(ref mut d) => { d.read_from_fs() },
-                            Node::File(_) => panic!("cannot move into file"),
+                        match **app.root.get_child_by_location(app.loc.clone()) {
+                            Node::Dir(ref mut d) => {
+                                d.read_children();
+                                if let Some(deep_current) = app.root.get_current(app.loc.clone()) {
+                                    app.loc.push_back(deep_current);
+                                }
+                            }
+                            Node::File(_) => (), // TODO ?
                         };
-                        
-                        if let Some(deep_current) = app.root.get_current(app.loc.clone()) {
-                            app.loc.push_back(deep_current);
-                        }
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         if let Some(cur) = app.root.get_current(app.loc.clone()) {
@@ -315,10 +335,13 @@ where
                             }
                         }
                     }
-                    // KeyCode::Enter => {
-                    //     execute!(w, Clear(ClearType::All))?; // TODO remove
-                    //     app.root.print_by_locatoin(app.loc.clone());
-                    // }
+                    KeyCode::Enter => {
+                        match **app.root.get_child_by_location(app.loc.clone()) {
+                            Node::Dir(ref mut d) => d.collapse(),
+                            Node::File(_) => (), // TODO: should there be a message? cant collapse
+                                                 // file
+                        };
+                    }
                     _ => {}
                 }
             }
@@ -331,15 +354,15 @@ where
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    //
+    // TODO:
+    // 1. need to refactor Location. is this really a good idea to have it?
+    //
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        cursor::MoveTo(0, 0),
-    )?;
+    execute!(stdout, EnterAlternateScreen, cursor::MoveTo(0, 0),)?;
 
-    let tick_rate = Duration::from_millis(250);
+    let tick_rate = Duration::from_millis(500);
 
     let state = AppState::new_from_fs("./");
     let res = run_app(state, &mut stdout, tick_rate);
