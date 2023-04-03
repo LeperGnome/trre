@@ -250,18 +250,18 @@ where
         if let Children::Some(chs) = chs {
             let cur_loc = loc.pop_front();
             for (idx, ch) in chs.list.iter().enumerate() {
-                if idx == chs.current && highlight_current {
-                    queue!(
-                        w,
-                        style::SetBackgroundColor(style::Color::White),
-                        style::SetForegroundColor(style::Color::Black)
-                    )?;
+                if idx == chs.current
+                    && highlight_current // i'm on a valid path
+                    && matches!(cur_loc, None) // i'm in a leaf
+                {
+                    queue!(w, style::SetBackgroundColor(style::Color::DarkGrey),)?;
                 }
                 match **ch {
                     Node::Dir(ref dir) => {
                         queue!(
                             w,
-                            style::Print(format!("{}dir: {}", "    ".repeat(depth), dir.name)),
+                            style::SetForegroundColor(style::Color::Magenta),
+                            style::Print(format!("{}{}/", "    ".repeat(depth), dir.name)),
                             cursor::MoveToNextLine(1),
                         )?;
                         let highlight_next;
@@ -275,7 +275,7 @@ where
                     Node::File(ref f) => {
                         queue!(
                             w,
-                            style::Print(format!("{}file: {}", "    ".repeat(depth), f.name)),
+                            style::Print(format!("{}{}", "    ".repeat(depth), f.name)),
                             cursor::MoveToNextLine(1),
                         )?;
                     }
