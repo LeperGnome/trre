@@ -8,11 +8,11 @@ use std::{
 
 use crossterm::{
     cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, Event, KeyCode},
     execute, queue, style, terminal,
     terminal::{
-        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-        LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen
     },
 };
 
@@ -58,6 +58,16 @@ struct FileInfo {
 }
 
 impl DirInfo {
+    fn new_from_fs(path: &str) -> Self {
+        let mut s = Self {
+            fullpath: path.into(),
+            name: path.into(),
+            children: Children::None,
+        };
+        s.read_from_fs();
+        return s;
+    }
+
     fn read_from_fs(&mut self) {
         let mut children = vec![];
         let mut paths = fs::read_dir(&self.fullpath).unwrap(); // TODO
@@ -87,18 +97,12 @@ impl DirInfo {
         self.children = Children::Some(ChildrenState::from(children));
     }
 
-    fn collapse(&mut self) {
-        self.children = Children::Unread;
-    }
-
-    fn new_from_fs(path: &str) -> Self {
-        let mut s = Self {
-            fullpath: path.into(),
-            name: path.into(),
-            children: Children::None,
-        };
-        s.read_from_fs();
-        return s;
+    fn collapse_or_expand(&mut self) {
+        match self.children {
+            Children::Unread => self.read_children(),
+            Children::Some(_) => self.children = Children::Unread,
+            Children::None => (),
+        }
     }
 
     fn read_children(&mut self) {
@@ -107,52 +111,14 @@ impl DirInfo {
         }
     }
 
-    fn print_children(&mut self) {
-        self.read_children();
-        match &self.children {
-            Children::Some(chs) => {
-                for ch in &chs.list {
-                    match **ch {
-                        Node::Dir(ref v) => println!("Dir: {}\r", v.name),
-                        Node::File(ref v) => println!("File: {}\r", v.name),
-                    }
-                }
-            }
-            Children::None | Children::Unread => (),
-        };
-    }
-
-    fn print_by_locatoin(&mut self, mut loc: Location) {
-        // println!("currently in {:?}", &self);
-        self.read_children();
-        if let Some(l) = loc.pop_front() {
-            match &mut self.children {
-                Children::Some(chs) => {
-                    if let Some(child) = chs.list.get_mut(l) {
-                        // println!("got child: {:?}", child);
-                        match **child {
-                            Node::Dir(ref mut dir) => dir.print_by_locatoin(loc),
-                            _ => panic!("this is a file"), // TODO
-                        }
-                    } else {
-                        panic!("no children found");
-                    }
-                }
-                Children::None | Children::Unread => (),
-            };
-        } else {
-            self.print_children();
-        }
-    }
-
-    fn get_child_by_location(&mut self, mut loc: Location) -> &mut Box<Node> {
+    fn get_child_by_location_mut(&mut self, mut loc: Location) -> &mut Box<Node> {
         // TODO can error
         self.read_children();
         match self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
                     match **chs.list.get_mut(l).unwrap() {
-                        Node::Dir(ref mut d) => d.get_child_by_location(loc),
+                        Node::Dir(ref mut d) => d.get_child_by_location_mut(loc),
                         _ => panic!("Not a directory"),
                     }
                 } else {
@@ -201,6 +167,27 @@ impl DirInfo {
                 }
             }
             Children::None | Children::Unread => (),
+        }
+    }
+
+    fn get_children_len_by_location(&self, mut loc: Location) -> usize {
+        match &self.children {
+            Children::Some(chs) => {
+                if let Some(l) = loc.pop_front() {
+                    if let Some(ch) = chs.list.get(l) {
+                        match **ch {
+                            Node::Dir(ref d) => d.get_children_len_by_location(loc),
+                            Node::File(_) => 0, // TODO error?
+                        }
+                    } else {
+                        // TODO child not found
+                        0
+                    }
+                } else {
+                    chs.list.len()
+                }
+            }
+            Children::Unread | Children::None => 0,
         }
     }
 }
@@ -287,6 +274,7 @@ where
     }
 
     render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
+    println!("\n\r\n\rloc: {:?}\r", &app.loc);
 
     w.flush()?;
     Ok(())
@@ -312,7 +300,7 @@ where
                         _ = app.loc.pop_back();
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
-                        match **app.root.get_child_by_location(app.loc.clone()) {
+                        match **app.root.get_child_by_location_mut(app.loc.clone()) {
                             Node::Dir(ref mut d) => {
                                 d.read_children();
                                 if let Some(deep_current) = app.root.get_current(app.loc.clone()) {
@@ -323,9 +311,12 @@ where
                         };
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
+                        let chn = app.root.get_children_len_by_location(app.loc.clone());
                         if let Some(cur) = app.root.get_current(app.loc.clone()) {
                             // TODO limit
-                            app.root.set_current(cur + 1, app.loc.clone());
+                            if cur < chn.saturating_sub(1) {
+                                app.root.set_current(cur + 1, app.loc.clone());
+                            }
                         }
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
@@ -336,8 +327,8 @@ where
                         }
                     }
                     KeyCode::Enter => {
-                        match **app.root.get_child_by_location(app.loc.clone()) {
-                            Node::Dir(ref mut d) => d.collapse(),
+                        match **app.root.get_child_by_location_mut(app.loc.clone()) {
+                            Node::Dir(ref mut d) => d.collapse_or_expand(),
                             Node::File(_) => (), // TODO: should there be a message? cant collapse
                                                  // file
                         };
