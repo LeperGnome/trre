@@ -153,7 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::MoveTo(0, 0),)?;
 
-    let tick_rate = Duration::from_millis(500);
+    let tick_rate = Duration::from_millis(250);
 
     let state = ui::AppState::new_from_fs("./");
     let res = ui::run_app(state, &mut stdout, tick_rate);

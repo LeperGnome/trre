@@ -15,6 +15,7 @@ use crossterm::{
 pub struct AppState {
     loc: Location,
     root: DirInfo,
+    offset: usize,
     need_rerender: bool,
 }
 
@@ -23,6 +24,7 @@ impl AppState {
         Self {
             loc: VecDeque::new(),
             root: DirInfo::new_from_fs(path),
+            offset: 0,
             need_rerender: true,
         }
     }
@@ -34,7 +36,9 @@ fn render_children<W: io::Write>(
     mut loc: Location,
     depth: usize,
     highlight_current: bool,
-) -> io::Result<()> {
+    mut lines_left: usize,
+    mut lines_left_to_skip: usize,
+) -> io::Result<(usize, usize)> {
     queue!(w, style::ResetColor)?;
     if let Children::Some(chs) = chs {
         let cur_loc = loc.pop_front();
@@ -46,34 +50,57 @@ fn render_children<W: io::Write>(
             {
                 queue!(w, style::SetBackgroundColor(style::Color::DarkGrey),)?;
             }
+            if lines_left == 0 {
+                return Ok((0, lines_left_to_skip));
+            }
+
+            if lines_left_to_skip > 0 {
+                lines_left_to_skip -= 1;
+            } else {
+                lines_left = lines_left.saturating_sub(1);
+            }
             match **ch {
                 Node::Dir(ref dir) => {
-                    queue!(
-                        w,
-                        style::SetForegroundColor(style::Color::Magenta),
-                        style::Print(format!("{}{}/", "    ".repeat(depth), dir.name)),
-                        cursor::MoveToNextLine(1),
-                    )?;
+                    if lines_left_to_skip == 0 {
+                        // TODO this is getting ugly
+                        queue!(
+                            w,
+                            style::SetForegroundColor(style::Color::Magenta),
+                            style::Print(format!("{}{}/", "    ".repeat(depth), dir.name)),
+                            cursor::MoveToNextLine(1),
+                        )?;
+                    }
                     let highlight_next;
                     if let Some(l) = cur_loc {
                         highlight_next = l == idx;
                     } else {
                         highlight_next = false;
                     }
-                    render_children(w, &dir.children, loc.clone(), depth + 1, highlight_next)?;
+                    (lines_left, lines_left_to_skip) = render_children(
+                        w,
+                        &dir.children,
+                        loc.clone(),
+                        depth + 1,
+                        highlight_next,
+                        lines_left,
+                        lines_left_to_skip,
+                    )?;
                 }
                 Node::File(ref f) => {
-                    queue!(
-                        w,
-                        style::Print(format!("{}{}", "    ".repeat(depth), f.name)),
-                        cursor::MoveToNextLine(1),
-                    )?;
+                    if lines_left_to_skip == 0 {
+                        // TODO this is getting ugly
+                        queue!(
+                            w,
+                            style::Print(format!("{}{}", "    ".repeat(depth), f.name)),
+                            cursor::MoveToNextLine(1),
+                        )?;
+                    }
                 }
             }
             queue!(w, style::ResetColor)?;
         }
     }
-    Ok(())
+    Ok((lines_left, lines_left_to_skip))
 }
 
 fn get_object_repr<O: FsObject>(obj: &O) -> String {
@@ -103,12 +130,36 @@ where
         };
     }
 
-    render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
+    render_children(
+        w,
+        &app.root.children,
+        app.loc.clone(),
+        0,
+        true,
+        terminal::size().unwrap().1 as usize - 5,
+        app.offset,
+    )?;
 
     queue!(w, style::Print(format!("\n\r\n\rloc: {:?}", &app.loc)))?;
 
     w.flush()?;
     Ok(())
+}
+
+//
+// dir1/
+// dir2/
+//     somef1
+//     somef2
+//     somedir/
+//         moref1
+//         moredir/
+// file1
+// file2
+//
+
+fn need_offset_increase() -> bool {
+    return true;
 }
 
 pub fn run_app<W>(mut app: AppState, w: &mut W, tick_rate: Duration) -> io::Result<()>
@@ -153,9 +204,9 @@ where
                     KeyCode::Down | KeyCode::Char('j') => {
                         let chn = app.root.get_children_len_by_location(app.loc.clone());
                         if let Some(cur) = app.root.get_current(app.loc.clone()) {
-                            // TODO limit
                             if cur < chn.saturating_sub(1) {
                                 app.root.set_current(cur + 1, app.loc.clone());
+                                // app.offset = app.offset.saturating_add(1);
                             }
                         }
                     }
@@ -163,6 +214,7 @@ where
                         if let Some(cur) = app.root.get_current(app.loc.clone()) {
                             if cur > 0 {
                                 app.root.set_current(cur - 1, app.loc.clone());
+                                // app.offset = app.offset.saturating_sub(1);
                             }
                         }
                     }
