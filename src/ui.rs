@@ -158,10 +158,6 @@ where
 // file2
 //
 
-fn need_offset_increase() -> bool {
-    return true;
-}
-
 pub fn run_app<W>(mut app: AppState, w: &mut W, tick_rate: Duration) -> io::Result<()>
 where
     W: io::Write,
