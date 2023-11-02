@@ -123,8 +123,6 @@ impl DirInfo {
     }
 
     pub fn get_node_by_location_mut(&mut self, mut loc: Location) -> Option<&mut Box<Node>> {
-        // TODO can error
-        self.read_children();
         match self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
@@ -156,14 +154,13 @@ impl DirInfo {
         }
     }
 
-    pub fn get_current(&mut self, mut loc: Location) -> Option<usize> {
-        self.read_children();
-        match &mut self.children {
+    pub fn get_current(&self, mut loc: Location) -> Option<usize> {
+        match &self.children {
             Children::Some(chs) => {
                 if let Some(l) = loc.pop_front() {
-                    if let Some(child) = chs.list.get_mut(l) {
+                    if let Some(child) = chs.list.get(l) {
                         match **child {
-                            Node::Dir(ref mut dir) => dir.get_current(loc),
+                            Node::Dir(ref dir) => dir.get_current(loc),
                             _ => panic!("this is a file"), // TODO
                         }
                     } else {
@@ -178,7 +175,6 @@ impl DirInfo {
     }
 
     pub fn set_current(&mut self, to: usize, mut loc: Location) {
-        self.read_children();
         match &mut self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
