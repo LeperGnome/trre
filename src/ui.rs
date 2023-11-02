@@ -104,7 +104,7 @@ fn render_children<W: io::Write>(
 }
 
 fn get_object_repr<O: FsObject>(obj: &O) -> String {
-    return format!("> {}\n\n\r", obj.fullpath());
+    return format!("> {}", obj.fullpath());
 }
 
 fn render<W>(app: &AppState, w: &mut W) -> io::Result<()>
@@ -128,6 +128,7 @@ where
             Node::Dir(ref d) => queue!(w, style::Print(get_object_repr(d)))?,
             Node::File(ref f) => queue!(w, style::Print(get_object_repr(f)))?,
         };
+        queue!(w, cursor::MoveToNextLine(1), cursor::MoveToNextLine(1))?;
     }
 
     render_children(
@@ -140,7 +141,12 @@ where
         app.offset,
     )?;
 
-    queue!(w, style::Print(format!("\n\r\n\rloc: {:?}", &app.loc)))?;
+    queue!(
+        w,
+        cursor::MoveToNextLine(1),
+        cursor::MoveToNextLine(1),
+        style::Print(format!("loc: {:?}", &app.loc))
+    )?;
 
     w.flush()?;
     Ok(())
