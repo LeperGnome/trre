@@ -17,7 +17,7 @@ pub struct AppState {
     root: DirInfo,
 }
 
-const MAX_CHILD_RENDERED: usize = 6;
+const MAX_CHILD_RENDERED: usize = 7;
 const PADDING: &str = "│  ";
 const TOP_PUNC_LINE_MORE: &str = "├────── ... ──────";
 const TOP_PUNC_LINE_DONE: &str = "├─────────────────";
