@@ -19,6 +19,11 @@ pub struct AppState {
 }
 
 const MAX_CHILD_RENDERED: usize = 6;
+const PADDING: &str = "│  ";
+const TOP_PUNC_LINE_MORE: &str = "├────── ... ──────";
+const TOP_PUNC_LINE_DONE: &str = "├─────────────────";
+const BOTTOM_PUNC_LINE_MORE: &str = "└────── ... ──────";
+const BOTTOM_PUNC_LINE_DONE: &str = "└─────────────────";
 
 impl AppState {
     pub fn new_from_fs(path: &str) -> Self {
@@ -37,7 +42,7 @@ fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()
         style::SetForegroundColor(style::Color::DarkGrey),
         style::Print(format!(
             "{}{}",
-            "|   ".repeat(depth.saturating_sub(1)),
+            PADDING.repeat(depth.saturating_sub(1)),
             line
         )),
         cursor::MoveToNextLine(1),
@@ -62,7 +67,7 @@ fn draw_node<W: io::Write>(w: &mut W, depth: usize, node: &Node) -> io::Result<(
     queue!(
         w,
         style::SetForegroundColor(style::Color::DarkGrey),
-        style::Print(format!("{}", "|   ".repeat(depth))),
+        style::Print(format!("{}", PADDING.repeat(depth))),
         style::SetForegroundColor(fgcolor),
         style::Print(name),
         cursor::MoveToNextLine(1),
@@ -81,9 +86,9 @@ fn render_children<W: io::Write>(
     if let Children::Some(chs) = chs {
         let top_punc_line: &str;
         if chs.selected >= MAX_CHILD_RENDERED {
-            top_punc_line = "\\______ ... ___";
+            top_punc_line = TOP_PUNC_LINE_MORE;
         } else {
-            top_punc_line = "\\______________";
+            top_punc_line = TOP_PUNC_LINE_DONE;
         }
         if depth != 0 {
             draw_punc(w, depth, top_punc_line)?;
@@ -121,9 +126,9 @@ fn render_children<W: io::Write>(
         }
         let bottom_punc_line: &str;
         if chs.list.len() > MAX_CHILD_RENDERED && chs.selected != chs.list.len() - 1 {
-            bottom_punc_line = "\\______ ... ___";
+            bottom_punc_line = BOTTOM_PUNC_LINE_MORE;
         } else {
-            bottom_punc_line = "\\______________";
+            bottom_punc_line = BOTTOM_PUNC_LINE_DONE;
         }
         if depth != 0 {
             draw_punc(w, depth, bottom_punc_line)?;
