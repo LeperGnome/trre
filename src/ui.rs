@@ -19,6 +19,8 @@ pub struct AppState {
     need_rerender: bool,
 }
 
+const MAX_CHILD_RENDERED: usize = 6;
+
 impl AppState {
     pub fn new_from_fs(path: &str) -> Self {
         Self {
@@ -30,6 +32,22 @@ impl AppState {
     }
 }
 
+fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()> {
+    queue!(
+        w,
+        style::ResetColor,
+        style::SetForegroundColor(style::Color::DarkGrey),
+        style::Print(format!(
+            "{}{}",
+            "|   ".repeat(depth.saturating_sub(1)),
+            line
+        )),
+        cursor::MoveToNextLine(1),
+        style::ResetColor,
+    )?;
+    Ok(())
+}
+
 fn render_children<W: io::Write>(
     w: &mut W,
     chs: &Children,
@@ -39,16 +57,34 @@ fn render_children<W: io::Write>(
     mut lines_left: usize,
     mut lines_left_to_skip: usize,
 ) -> io::Result<(usize, usize)> {
-    queue!(w, style::ResetColor)?;
     if let Children::Some(chs) = chs {
-        let cur_loc = loc.pop_front();
-        for (idx, ch) in chs.list.iter().enumerate() {
+        let top_punc_line: &str;
+        if chs.selected >= MAX_CHILD_RENDERED {
+            top_punc_line = "\\______ ... ___";
+        } else {
+            top_punc_line = "\\______________";
+        }
+        if depth != 0 {
+            draw_punc(w, depth, top_punc_line)?;
+        }
+        let local_loc = loc.pop_front();
+        let mut skip_n: usize = 0;
+        if chs.selected >= MAX_CHILD_RENDERED {
+            skip_n = chs.selected - MAX_CHILD_RENDERED + 1;
+        }
+        for (idx, ch) in chs
+            .list
+            .iter()
+            .enumerate()
+            .skip(skip_n)
+            .take(MAX_CHILD_RENDERED)
+        {
             if idx == chs.selected
                 && highlight_current  // i'm on a valid path
-                && matches!(cur_loc, None)
+                && matches!(local_loc, None)
             // i'm in a leaf
             {
-                queue!(w, style::SetBackgroundColor(style::Color::DarkGrey),)?;
+                queue!(w, style::SetBackgroundColor(style::Color::DarkGrey))?;
             }
             if lines_left == 0 {
                 return Ok((0, lines_left_to_skip));
@@ -66,12 +102,13 @@ fn render_children<W: io::Write>(
                         queue!(
                             w,
                             style::SetForegroundColor(style::Color::Magenta),
-                            style::Print(format!("{}{}/", "    ".repeat(depth), dir.name)),
+                            style::Print(format!("{}{}/", "|   ".repeat(depth), dir.name)),
                             cursor::MoveToNextLine(1),
+                            style::ResetColor,
                         )?;
                     }
                     let highlight_next;
-                    if let Some(l) = cur_loc {
+                    if let Some(l) = local_loc {
                         highlight_next = l == idx;
                     } else {
                         highlight_next = false;
@@ -91,7 +128,7 @@ fn render_children<W: io::Write>(
                         // TODO this is getting ugly
                         queue!(
                             w,
-                            style::Print(format!("{}{}", "    ".repeat(depth), f.name)),
+                            style::Print(format!("{}{}", "|   ".repeat(depth), f.name)),
                             cursor::MoveToNextLine(1),
                         )?;
                     }
@@ -99,12 +136,35 @@ fn render_children<W: io::Write>(
             }
             queue!(w, style::ResetColor)?;
         }
+        let bottom_punc_line: &str;
+        if chs.list.len() > MAX_CHILD_RENDERED && chs.selected != chs.list.len() - 1 {
+            bottom_punc_line = "\\______ ... ___";
+        } else {
+            bottom_punc_line = "\\______________";
+        }
+        if depth != 0 {
+            draw_punc(w, depth, bottom_punc_line)?;
+        }
     }
     Ok((lines_left, lines_left_to_skip))
 }
 
 fn get_object_repr<O: FsObject>(obj: &O) -> String {
     return format!("> {}", obj.fullpath());
+}
+
+fn render_top_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    if let Some(node) = app.root.get_node_by_location(app.loc.clone()) {
+        match **node {
+            Node::Dir(ref d) => queue!(w, style::Print(get_object_repr(d)))?,
+            Node::File(ref f) => queue!(w, style::Print(get_object_repr(f)))?,
+        };
+        queue!(w, cursor::MoveToNextLine(1), cursor::MoveToNextLine(1))?;
+    }
+    Ok(())
 }
 
 fn render<W>(app: &AppState, w: &mut W) -> io::Result<()>
@@ -123,13 +183,7 @@ where
         cursor::MoveTo(0, 0)
     )?;
 
-    if let Some(node) = app.root.get_node_by_location(app.loc.clone()) {
-        match **node {
-            Node::Dir(ref d) => queue!(w, style::Print(get_object_repr(d)))?,
-            Node::File(ref f) => queue!(w, style::Print(get_object_repr(f)))?,
-        };
-        queue!(w, cursor::MoveToNextLine(1), cursor::MoveToNextLine(1))?;
-    }
+    render_top_bar(app, w)?;
 
     render_children(
         w,
@@ -141,12 +195,12 @@ where
         app.offset,
     )?;
 
-    queue!(
-        w,
-        cursor::MoveToNextLine(1),
-        cursor::MoveToNextLine(1),
-        style::Print(format!("loc: {:?}", &app.loc))
-    )?;
+    // queue!(
+    //     w,
+    //     cursor::MoveToNextLine(1),
+    //     cursor::MoveToNextLine(1),
+    //     style::Print(format!("loc: {:?}", &app.loc))
+    // )?;
 
     w.flush()?;
     Ok(())
