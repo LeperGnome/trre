@@ -79,7 +79,7 @@ impl DirInfo {
         return s;
     }
 
-    pub fn read_from_fs(&mut self) {
+    fn read_from_fs(&mut self) {
         let mut children = vec![];
         let mut paths = fs::read_dir(&self.fullpath).unwrap(); // TODO
         while let Some(child) = paths.next() {
@@ -154,13 +154,13 @@ impl DirInfo {
         }
     }
 
-    pub fn get_current(&self, mut loc: Location) -> Option<usize> {
+    pub fn get_current_by_locatoin(&self, mut loc: Location) -> Option<usize> {
         match &self.children {
             Children::Some(chs) => {
                 if let Some(l) = loc.pop_front() {
                     if let Some(child) = chs.list.get(l) {
                         match **child {
-                            Node::Dir(ref dir) => dir.get_current(loc),
+                            Node::Dir(ref dir) => dir.get_current_by_locatoin(loc),
                             _ => panic!("this is a file"), // TODO
                         }
                     } else {
@@ -174,13 +174,13 @@ impl DirInfo {
         }
     }
 
-    pub fn set_current(&mut self, to: usize, mut loc: Location) {
+    pub fn set_current_by_location(&mut self, to: usize, mut loc: Location) {
         match &mut self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
                     if let Some(child) = chs.list.get_mut(l) {
                         match **child {
-                            Node::Dir(ref mut dir) => dir.set_current(to, loc),
+                            Node::Dir(ref mut dir) => dir.set_current_by_location(to, loc),
                             _ => panic!("this is a file"), // TODO
                         }
                     }

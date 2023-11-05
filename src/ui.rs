@@ -8,7 +8,7 @@ use std::{
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEvent},
     queue, style, terminal,
 };
 
@@ -182,54 +182,8 @@ where
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 app.need_rerender = true; // TODO: will this always work the way I want it?
-
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Left | KeyCode::Char('h') => {
-                        _ = app.loc.pop_back();
-                    }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
-                            match **node {
-                                Node::Dir(ref mut d) => {
-                                    d.read_children();
-                                    if let Some(deep_current) =
-                                        app.root.get_current(app.loc.clone())
-                                    {
-                                        app.loc.push_back(deep_current);
-                                    }
-                                }
-                                Node::File(_) => (), // TODO ?
-                            }
-                        };
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        let chn = app.root.get_children_len_by_location(app.loc.clone());
-                        if let Some(cur) = app.root.get_current(app.loc.clone()) {
-                            if cur < chn.saturating_sub(1) {
-                                app.root.set_current(cur + 1, app.loc.clone());
-                                // app.offset = app.offset.saturating_add(1);
-                            }
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        if let Some(cur) = app.root.get_current(app.loc.clone()) {
-                            if cur > 0 {
-                                app.root.set_current(cur - 1, app.loc.clone());
-                                // app.offset = app.offset.saturating_sub(1);
-                            }
-                        }
-                    }
-                    KeyCode::Enter => {
-                        if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
-                            match **node {
-                                Node::Dir(ref mut d) => d.collapse_or_expand(),
-                                Node::File(_) => (), // TODO: should there be a message? cant collapse
-                                                     // file
-                            }
-                        };
-                    }
-                    _ => {}
+                if let Err(_) = process_key(&mut app, key) {
+                    return Ok(());
                 }
             }
         }
@@ -238,4 +192,55 @@ where
             last_tick = Instant::now();
         }
     }
+}
+
+fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => return Err(()),
+        KeyCode::Left | KeyCode::Char('h') => {
+            _ = app.loc.pop_back();
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
+                match **node {
+                    Node::Dir(ref mut d) => {
+                        d.read_children();
+                        if let Some(deep_current) =
+                            app.root.get_current_by_locatoin(app.loc.clone())
+                        {
+                            app.loc.push_back(deep_current);
+                        }
+                    }
+                    Node::File(_) => (), // TODO ?
+                }
+            };
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            let chn = app.root.get_children_len_by_location(app.loc.clone());
+            if let Some(cur) = app.root.get_current_by_locatoin(app.loc.clone()) {
+                if cur < chn.saturating_sub(1) {
+                    app.root.set_current_by_location(cur + 1, app.loc.clone());
+                    // app.offset = app.offset.saturating_add(1);
+                }
+            }
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if let Some(cur) = app.root.get_current_by_locatoin(app.loc.clone()) {
+                if cur > 0 {
+                    app.root.set_current_by_location(cur - 1, app.loc.clone());
+                    // app.offset = app.offset.saturating_sub(1);
+                }
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
+                match **node {
+                    Node::Dir(ref mut d) => d.collapse_or_expand(),
+                    Node::File(_) => (),
+                }
+            };
+        }
+        _ => {}
+    }
+    Ok(())
 }
