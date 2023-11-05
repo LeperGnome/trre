@@ -15,7 +15,6 @@ use crossterm::{
 pub struct AppState {
     loc: Location,
     root: DirInfo,
-    need_rerender: bool,
 }
 
 const MAX_CHILD_RENDERED: usize = 6;
@@ -30,7 +29,6 @@ impl AppState {
         Self {
             loc: VecDeque::new(),
             root: DirInfo::new_from_fs(path),
-            need_rerender: true,
         }
     }
 }
@@ -159,10 +157,6 @@ fn render<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
 {
-    if !app.need_rerender {
-        return Ok(());
-    }
-
     queue!(
         w,
         style::ResetColor,
@@ -172,16 +166,7 @@ where
     )?;
 
     render_top_bar(app, w)?;
-
     render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
-
-    // queue!(
-    //     w,
-    //     cursor::MoveToNextLine(1),
-    //     cursor::MoveToNextLine(1),
-    //     style::Print(format!("loc: {:?}", &app.loc))
-    // )?;
-
     w.flush()?;
     Ok(())
 }
@@ -192,10 +177,7 @@ where
 {
     let mut last_tick = Instant::now();
     loop {
-        if app.need_rerender {
-            render(&app, w)?;
-            app.need_rerender = false;
-        }
+        render(&app, w)?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -203,7 +185,6 @@ where
 
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                app.need_rerender = true; // TODO: will this always work the way I want it?
                 if let Err(_) = process_key(&mut app, key) {
                     return Ok(());
                 }
