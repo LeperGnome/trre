@@ -15,7 +15,6 @@ use crossterm::{
 pub struct AppState {
     loc: Location,
     root: DirInfo,
-    offset: usize,
     need_rerender: bool,
 }
 
@@ -26,7 +25,6 @@ impl AppState {
         Self {
             loc: VecDeque::new(),
             root: DirInfo::new_from_fs(path),
-            offset: 0,
             need_rerender: true,
         }
     }
@@ -48,15 +46,38 @@ fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()
     Ok(())
 }
 
+fn draw_node<W: io::Write>(w: &mut W, depth: usize, node: &Node) -> io::Result<()> {
+    let name: String;
+    let fgcolor: style::Color;
+    match node {
+        Node::Dir(ref dir) => {
+            name = format!("{}/", dir.name);
+            fgcolor = style::Color::Magenta;
+        }
+        Node::File(ref f) => {
+            name = f.name.clone();
+            fgcolor = style::Color::White;
+        }
+    };
+    queue!(
+        w,
+        style::SetForegroundColor(style::Color::DarkGrey),
+        style::Print(format!("{}", "|   ".repeat(depth))),
+        style::SetForegroundColor(fgcolor),
+        style::Print(name),
+        cursor::MoveToNextLine(1),
+        style::ResetColor,
+    )?;
+    Ok(())
+}
+
 fn render_children<W: io::Write>(
     w: &mut W,
     chs: &Children,
     mut loc: Location,
     depth: usize,
-    highlight_current: bool,
-    mut lines_left: usize,
-    mut lines_left_to_skip: usize,
-) -> io::Result<(usize, usize)> {
+    in_selected_branch: bool,
+) -> io::Result<()> {
     if let Children::Some(chs) = chs {
         let top_punc_line: &str;
         if chs.selected >= MAX_CHILD_RENDERED {
@@ -68,6 +89,7 @@ fn render_children<W: io::Write>(
             draw_punc(w, depth, top_punc_line)?;
         }
         let local_loc = loc.pop_front();
+
         let mut skip_n: usize = 0;
         if chs.selected >= MAX_CHILD_RENDERED {
             skip_n = chs.selected - MAX_CHILD_RENDERED + 1;
@@ -79,65 +101,21 @@ fn render_children<W: io::Write>(
             .skip(skip_n)
             .take(MAX_CHILD_RENDERED)
         {
-            if idx == chs.selected
-                && highlight_current  // i'm on a valid path
-                && matches!(local_loc, None)
-            // i'm in a leaf
-            {
+            if idx == chs.selected && in_selected_branch && matches!(local_loc, None) {
+                // i'm a selected node!
                 queue!(w, style::SetBackgroundColor(style::Color::DarkGrey))?;
             }
-            if lines_left == 0 {
-                return Ok((0, lines_left_to_skip));
-            }
 
-            if lines_left_to_skip > 0 {
-                lines_left_to_skip -= 1;
-            } else {
-                lines_left = lines_left.saturating_sub(1);
-            }
-            match **ch {
-                Node::Dir(ref dir) => {
-                    if lines_left_to_skip == 0 {
-                        // TODO this is getting ugly
-                        queue!(
-                            w,
-                            style::SetForegroundColor(style::Color::DarkGrey),
-                            style::Print(format!("{}", "|   ".repeat(depth))),
-                            style::SetForegroundColor(style::Color::Magenta),
-                            style::Print(format!("{}/", dir.name)),
-                            cursor::MoveToNextLine(1),
-                            style::ResetColor,
-                        )?;
-                    }
-                    let highlight_next;
-                    if let Some(l) = local_loc {
-                        highlight_next = l == idx;
-                    } else {
-                        highlight_next = false;
-                    }
-                    (lines_left, lines_left_to_skip) = render_children(
-                        w,
-                        &dir.children,
-                        loc.clone(),
-                        depth + 1,
-                        highlight_next,
-                        lines_left,
-                        lines_left_to_skip,
-                    )?;
+            draw_node(w, depth, ch)?;
+
+            if let Node::Dir(ref dir) = **ch {
+                let highlight_next;
+                if let Some(l) = local_loc {
+                    highlight_next = l == idx;
+                } else {
+                    highlight_next = false;
                 }
-                Node::File(ref f) => {
-                    if lines_left_to_skip == 0 {
-                        // TODO this is getting ugly
-                        queue!(
-                            w,
-                            style::SetForegroundColor(style::Color::DarkGrey),
-                            style::Print(format!("{}", "|   ".repeat(depth))),
-                            style::SetForegroundColor(style::Color::White),
-                            style::Print(format!("{}", f.name)),
-                            cursor::MoveToNextLine(1),
-                        )?;
-                    }
-                }
+                render_children(w, &dir.children, loc.clone(), depth + 1, highlight_next)?;
             }
             queue!(w, style::ResetColor)?;
         }
@@ -151,7 +129,7 @@ fn render_children<W: io::Write>(
             draw_punc(w, depth, bottom_punc_line)?;
         }
     }
-    Ok((lines_left, lines_left_to_skip))
+    Ok(())
 }
 
 fn get_object_repr<O: FsObject>(obj: &O) -> String {
@@ -190,15 +168,7 @@ where
 
     render_top_bar(app, w)?;
 
-    render_children(
-        w,
-        &app.root.children,
-        app.loc.clone(),
-        0,
-        true,
-        terminal::size().unwrap().1 as usize - 5,
-        app.offset,
-    )?;
+    render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
 
     // queue!(
     //     w,
@@ -235,7 +205,6 @@ where
             }
         }
         if last_tick.elapsed() >= tick_rate {
-            // TODO: Do I need this?
             last_tick = Instant::now();
         }
     }
@@ -272,7 +241,6 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
             if let Some(cur) = app.root.get_selected_by_locatoin(app.loc.clone()) {
                 if cur < chn.saturating_sub(1) {
                     app.root.set_selected_by_location(cur + 1, app.loc.clone());
-                    // app.offset = app.offset.saturating_add(1);
                 }
             }
         }
@@ -280,7 +248,6 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
             if let Some(cur) = app.root.get_selected_by_locatoin(app.loc.clone()) {
                 if cur > 0 {
                     app.root.set_selected_by_location(cur - 1, app.loc.clone());
-                    // app.offset = app.offset.saturating_sub(1);
                 }
             }
         }
