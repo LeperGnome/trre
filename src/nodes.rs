@@ -105,7 +105,11 @@ impl DirInfo {
                 Ok(_) | Err(_) => continue,
             }
         }
-        self.children = Children::Some(ChildrenState::from(children));
+        if children.len() > 0 {
+            self.children = Children::Some(ChildrenState::from(children));
+        } else {
+            self.children = Children::None;
+        }
     }
 
     pub fn collapse_or_expand(&mut self) {
@@ -154,13 +158,13 @@ impl DirInfo {
         }
     }
 
-    pub fn get_current_by_locatoin(&self, mut loc: Location) -> Option<usize> {
+    pub fn get_selected_by_locatoin(&self, mut loc: Location) -> Option<usize> {
         match &self.children {
             Children::Some(chs) => {
                 if let Some(l) = loc.pop_front() {
                     if let Some(child) = chs.list.get(l) {
                         match **child {
-                            Node::Dir(ref dir) => dir.get_current_by_locatoin(loc),
+                            Node::Dir(ref dir) => dir.get_selected_by_locatoin(loc),
                             _ => panic!("this is a file"), // TODO
                         }
                     } else {
@@ -174,13 +178,13 @@ impl DirInfo {
         }
     }
 
-    pub fn set_current_by_location(&mut self, to: usize, mut loc: Location) {
+    pub fn set_selected_by_location(&mut self, to: usize, mut loc: Location) {
         match &mut self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
                     if let Some(child) = chs.list.get_mut(l) {
                         match **child {
-                            Node::Dir(ref mut dir) => dir.set_current_by_location(to, loc),
+                            Node::Dir(ref mut dir) => dir.set_selected_by_location(to, loc),
                             _ => panic!("this is a file"), // TODO
                         }
                     }

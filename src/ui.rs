@@ -101,8 +101,10 @@ fn render_children<W: io::Write>(
                         // TODO this is getting ugly
                         queue!(
                             w,
+                            style::SetForegroundColor(style::Color::DarkGrey),
+                            style::Print(format!("{}", "|   ".repeat(depth))),
                             style::SetForegroundColor(style::Color::Magenta),
-                            style::Print(format!("{}{}/", "|   ".repeat(depth), dir.name)),
+                            style::Print(format!("{}/", dir.name)),
                             cursor::MoveToNextLine(1),
                             style::ResetColor,
                         )?;
@@ -128,7 +130,10 @@ fn render_children<W: io::Write>(
                         // TODO this is getting ugly
                         queue!(
                             w,
-                            style::Print(format!("{}{}", "|   ".repeat(depth), f.name)),
+                            style::SetForegroundColor(style::Color::DarkGrey),
+                            style::Print(format!("{}", "|   ".repeat(depth))),
+                            style::SetForegroundColor(style::Color::White),
+                            style::Print(format!("{}", f.name)),
                             cursor::MoveToNextLine(1),
                         )?;
                     }
@@ -206,18 +211,6 @@ where
     Ok(())
 }
 
-//
-// dir1/
-// dir2/
-//     somef1
-//     somef2
-//     somedir/
-//         moref1
-//         moredir/
-// file1
-// file2
-//
-
 pub fn run_app<W>(mut app: AppState, w: &mut W, tick_rate: Duration) -> io::Result<()>
 where
     W: io::Write,
@@ -259,10 +252,15 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
                 match **node {
                     Node::Dir(ref mut d) => {
                         d.read_children();
-                        if let Some(deep_current) =
-                            app.root.get_current_by_locatoin(app.loc.clone())
-                        {
-                            app.loc.push_back(deep_current);
+                        match d.children {
+                            Children::Some(_) => {
+                                if let Some(deep_current) =
+                                    app.root.get_selected_by_locatoin(app.loc.clone())
+                                {
+                                    app.loc.push_back(deep_current);
+                                }
+                            }
+                            Children::None | Children::Unread => (),
                         }
                     }
                     Node::File(_) => (), // TODO ?
@@ -271,17 +269,17 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
         }
         KeyCode::Down | KeyCode::Char('j') => {
             let chn = app.root.get_children_len_by_location(app.loc.clone());
-            if let Some(cur) = app.root.get_current_by_locatoin(app.loc.clone()) {
+            if let Some(cur) = app.root.get_selected_by_locatoin(app.loc.clone()) {
                 if cur < chn.saturating_sub(1) {
-                    app.root.set_current_by_location(cur + 1, app.loc.clone());
+                    app.root.set_selected_by_location(cur + 1, app.loc.clone());
                     // app.offset = app.offset.saturating_add(1);
                 }
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if let Some(cur) = app.root.get_current_by_locatoin(app.loc.clone()) {
+            if let Some(cur) = app.root.get_selected_by_locatoin(app.loc.clone()) {
                 if cur > 0 {
-                    app.root.set_current_by_location(cur - 1, app.loc.clone());
+                    app.root.set_selected_by_location(cur - 1, app.loc.clone());
                     // app.offset = app.offset.saturating_sub(1);
                 }
             }
