@@ -36,7 +36,6 @@ impl AppState {
 fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()> {
     queue!(
         w,
-        style::ResetColor,
         style::SetForegroundColor(style::Color::DarkGrey),
         style::Print(format!(
             "{}{}",
@@ -44,7 +43,6 @@ fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()
             line
         )),
         cursor::MoveToNextLine(1),
-        style::ResetColor,
     )?;
     Ok(())
 }
@@ -52,7 +50,7 @@ fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()
 fn draw_node<W: io::Write>(w: &mut W, depth: usize, node: &Node) -> io::Result<()> {
     let name: String;
     let fgcolor: style::Color;
-    match node {
+    match *node {
         Node::Dir(ref dir) => {
             name = format!("{}/", dir.name);
             fgcolor = style::Color::Magenta;
@@ -80,7 +78,8 @@ fn render_children<W: io::Write>(
     mut loc: Location,
     depth: usize,
     in_selected_branch: bool,
-) -> io::Result<()> {
+    mut lines_capacity: usize,
+) -> io::Result<usize> {
     if let Children::Some(chs) = chs {
         let top_punc_line: &str;
         if chs.selected >= MAX_CHILD_RENDERED {
@@ -88,8 +87,9 @@ fn render_children<W: io::Write>(
         } else {
             top_punc_line = TOP_PUNC_LINE_DONE;
         }
-        if depth != 0 {
+        if depth != 0 && lines_capacity > 0{
             draw_punc(w, depth, top_punc_line)?;
+            lines_capacity = lines_capacity.saturating_sub(1);
         }
         let local_loc = loc.pop_front();
 
@@ -108,6 +108,11 @@ fn render_children<W: io::Write>(
                 // i'm a selected node!
                 queue!(w, style::SetBackgroundColor(style::Color::DarkGrey))?;
             }
+            lines_capacity = lines_capacity.saturating_sub(1);
+
+            if lines_capacity == 0 {
+                return Ok(0);
+            }
 
             draw_node(w, depth, ch)?;
 
@@ -118,7 +123,14 @@ fn render_children<W: io::Write>(
                 } else {
                     highlight_next = false;
                 }
-                render_children(w, &dir.children, loc.clone(), depth + 1, highlight_next)?;
+                lines_capacity = render_children(
+                    w,
+                    &dir.children,
+                    loc.clone(),
+                    depth + 1,
+                    highlight_next,
+                    lines_capacity,
+                )?;
             }
             queue!(w, style::ResetColor)?;
         }
@@ -128,11 +140,12 @@ fn render_children<W: io::Write>(
         } else {
             bottom_punc_line = BOTTOM_PUNC_LINE_DONE;
         }
-        if depth != 0 {
+        if depth != 0 && lines_capacity > 0 {
             draw_punc(w, depth, bottom_punc_line)?;
+            lines_capacity = lines_capacity.saturating_sub(1);
         }
     }
-    Ok(())
+    Ok(lines_capacity)
 }
 
 fn get_object_repr<O: FsObject>(obj: &O) -> String {
@@ -159,14 +172,21 @@ where
 {
     queue!(
         w,
+        cursor::Hide,
         style::ResetColor,
         terminal::Clear(terminal::ClearType::All),
-        cursor::Hide,
         cursor::MoveTo(0, 0)
     )?;
 
     render_top_bar(app, w)?;
-    render_children(w, &app.root.children, app.loc.clone(), 0, true)?;
+    render_children(
+        w,
+        &app.root.children,
+        app.loc.clone(),
+        0,
+        true,
+        terminal::size().unwrap().1 as usize - 3,
+    )?;
     w.flush()?;
     Ok(())
 }
