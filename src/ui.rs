@@ -19,10 +19,8 @@ pub struct AppState {
 
 const MAX_CHILD_RENDERED: usize = 7;
 const PADDING: &str = "│  ";
-const TOP_PUNC_LINE_MORE: &str = "├────── ... ──────";
-const TOP_PUNC_LINE_DONE: &str = "├─────────────────";
-const BOTTOM_PUNC_LINE_MORE: &str = "└────── ... ──────";
-const BOTTOM_PUNC_LINE_DONE: &str = "└─────────────────";
+const PADDING_MORE_UP: &str = "▲  ";
+const PADDING_MORE_DOWN: &str = "▼  ";
 
 impl AppState {
     pub fn new_from_fs(path: &str) -> Self {
@@ -33,43 +31,43 @@ impl AppState {
     }
 }
 
-fn draw_punc<W: io::Write>(w: &mut W, depth: usize, line: &str) -> io::Result<()> {
-    queue!(
-        w,
-        style::SetForegroundColor(style::Color::DarkGrey),
-        style::Print(format!(
-            "{}{}",
-            PADDING.repeat(depth.saturating_sub(1)),
-            line
-        )),
-        terminal::Clear(terminal::ClearType::UntilNewLine),
-        cursor::MoveToNextLine(1),
-    )?;
-    Ok(())
-}
-
-fn draw_node<W: io::Write>(w: &mut W, depth: usize, node: &Node) -> io::Result<()> {
-    let name: String;
-    let fgcolor: style::Color;
-    match *node {
-        Node::Dir(ref dir) => {
-            name = format!("{}/", dir.name);
-            fgcolor = style::Color::Magenta;
-        }
-        Node::File(ref f) => {
-            name = f.name.clone();
-            fgcolor = style::Color::White;
-        }
+fn draw_node<W: io::Write>(
+    w: &mut W,
+    depth: usize,
+    node: &Node,
+    highlight: bool,
+    more_up: bool,
+    more_down: bool,
+) -> io::Result<()> {
+    let (name, fgcolor) = match *node {
+        Node::Dir(ref dir) => (format!("{}/", dir.name), style::Color::Magenta),
+        Node::File(ref f) => (f.name.clone(), style::Color::White),
     };
+
+    let bgcolor = match highlight {
+        true => style::Color::DarkGrey,
+        false => style::Color::Black,
+    };
+
+    let padding: String;
+
+    if more_up {
+        padding = format!("{}{}", PADDING.repeat(depth - 1), PADDING_MORE_UP)
+    } else if more_down {
+        padding = format!("{}{}", PADDING.repeat(depth - 1), PADDING_MORE_DOWN)
+    } else {
+        padding = format!("{}", PADDING.repeat(depth))
+    }
     queue!(
         w,
-        style::SetForegroundColor(style::Color::DarkGrey),
-        style::Print(format!("{}", PADDING.repeat(depth))),
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print(padding),
         style::SetForegroundColor(fgcolor),
+        style::SetBackgroundColor(bgcolor),
         style::Print(name),
+        style::ResetColor,
         terminal::Clear(terminal::ClearType::UntilNewLine),
         cursor::MoveToNextLine(1),
-        style::ResetColor,
     )?;
     Ok(())
 }
@@ -84,15 +82,13 @@ fn render_children<W: io::Write>(
     max_children: usize,
 ) -> io::Result<usize> {
     if let Children::Some(chs) = chs {
-        let top_punc_line: &str;
+        let mut more_up: bool = false;
+        let mut more_down: bool = false;
         if chs.selected >= max_children {
-            top_punc_line = TOP_PUNC_LINE_MORE;
-        } else {
-            top_punc_line = TOP_PUNC_LINE_DONE;
+            more_up = true;
         }
-        if depth != 0 && lines_capacity > 0 {
-            draw_punc(w, depth, top_punc_line)?;
-            lines_capacity = lines_capacity.saturating_sub(1);
+        if chs.list.len() > max_children && chs.selected != chs.list.len() - 1 {
+            more_down = true;
         }
         let local_loc = loc.pop_front();
 
@@ -100,18 +96,30 @@ fn render_children<W: io::Write>(
         if chs.selected >= max_children {
             skip_n = chs.selected - max_children + 1;
         }
-        for (idx, ch) in chs.list.iter().enumerate().skip(skip_n).take(max_children) {
-            if idx == chs.selected && in_selected_branch && matches!(local_loc, None) {
+        for (idx, (gid, ch)) in chs
+            .list
+            .iter()
+            .enumerate()
+            .skip(skip_n)
+            .enumerate()
+            .take(max_children)
+        {
+            let mut should_highlight = false;
+            if gid == chs.selected && in_selected_branch && matches!(local_loc, None) {
                 // i'm a selected node!
-                queue!(w, style::SetBackgroundColor(style::Color::DarkGrey))?;
+                should_highlight = true;
             }
+
+            draw_node(
+                w,
+                depth,
+                ch,
+                should_highlight,
+                more_up && idx == 0,
+                more_down && idx == max_children - 1,
+            )?;
+
             lines_capacity = lines_capacity.saturating_sub(1);
-
-            if lines_capacity == 0 {
-                return Ok(0);
-            }
-
-            draw_node(w, depth, ch)?;
 
             if let Node::Dir(ref dir) = **ch {
                 let highlight_next;
@@ -127,20 +135,10 @@ fn render_children<W: io::Write>(
                     depth + 1,
                     highlight_next,
                     lines_capacity,
-                    MAX_CHILD_RENDERED,
+                    lines_capacity.saturating_sub(1).min(MAX_CHILD_RENDERED),
                 )?;
             }
             queue!(w, style::ResetColor)?;
-        }
-        let bottom_punc_line: &str;
-        if chs.list.len() > max_children && chs.selected != chs.list.len() - 1 {
-            bottom_punc_line = BOTTOM_PUNC_LINE_MORE;
-        } else {
-            bottom_punc_line = BOTTOM_PUNC_LINE_DONE;
-        }
-        if depth != 0 && lines_capacity > 0 {
-            draw_punc(w, depth, bottom_punc_line)?;
-            lines_capacity = lines_capacity.saturating_sub(1);
         }
     }
     Ok(lines_capacity)
@@ -163,6 +161,7 @@ where
             w,
             terminal::Clear(terminal::ClearType::UntilNewLine),
             cursor::MoveToNextLine(1),
+            terminal::Clear(terminal::ClearType::UntilNewLine),
             cursor::MoveToNextLine(1)
         )?;
     }
@@ -176,15 +175,23 @@ where
     queue!(w, cursor::Hide, style::ResetColor, cursor::MoveTo(0, 0))?;
 
     render_top_bar(app, w)?;
-    render_children(
+    let lines_left = render_children(
         w,
         &app.root.children,
         app.loc.clone(),
         1,
         true,
-        terminal::size().unwrap().1 as usize - 5,
-        5,
+        terminal::size().unwrap().1 as usize - 2,
+        terminal::size().unwrap().1 as usize - 2,
     )?;
+    for _ in 0..lines_left {
+        queue!(
+            w,
+            style::Print("~"),
+            terminal::Clear(terminal::ClearType::UntilNewLine),
+            cursor::MoveToNextLine(1),
+        )?;
+    }
     w.flush()?;
     Ok(())
 }
