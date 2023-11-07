@@ -104,6 +104,10 @@ fn render_children<W: io::Write>(
             .enumerate()
             .take(max_children)
         {
+            if lines_capacity == 0 {
+                break;
+            }
+
             let mut should_highlight = false;
             if gid == chs.selected && in_selected_branch && matches!(local_loc, None) {
                 // i'm a selected node!
@@ -135,7 +139,7 @@ fn render_children<W: io::Write>(
                     depth + 1,
                     highlight_next,
                     lines_capacity,
-                    lines_capacity.saturating_sub(1).min(MAX_CHILD_RENDERED),
+                    lines_capacity.saturating_sub(2).min(MAX_CHILD_RENDERED),
                 )?;
             }
             queue!(w, style::ResetColor)?;
@@ -181,10 +185,10 @@ where
         app.loc.clone(),
         1,
         true,
-        terminal::size().unwrap().1 as usize - 2,
-        terminal::size().unwrap().1 as usize - 2,
+        terminal::size().unwrap().1 as usize - 3,
+        terminal::size().unwrap().1 as usize - 3,
     )?;
-    for _ in 0..lines_left {
+    for _ in 0..=lines_left {
         queue!(
             w,
             style::Print("~"),
