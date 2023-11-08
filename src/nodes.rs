@@ -38,11 +38,6 @@ pub enum Children {
     Unread,
 }
 
-pub trait FsObject {
-    fn fullpath(&self) -> String;
-    fn name(&self) -> String;
-}
-
 #[derive(Debug)]
 pub struct DirInfo {
     pub children: Children,
@@ -50,30 +45,10 @@ pub struct DirInfo {
     pub name: String,
 }
 
-impl FsObject for DirInfo {
-    fn name(&self) -> String {
-        return self.name.clone();
-    }
-
-    fn fullpath(&self) -> String {
-        return self.fullpath.clone();
-    }
-}
-
 #[derive(Debug)]
 pub struct FileInfo {
     pub fullpath: String,
     pub name: String,
-}
-
-impl FsObject for FileInfo {
-    fn name(&self) -> String {
-        return self.name.clone();
-    }
-
-    fn fullpath(&self) -> String {
-        return self.fullpath.clone();
-    }
 }
 
 impl DirInfo {

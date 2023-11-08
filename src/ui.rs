@@ -36,7 +36,7 @@ impl AppState {
     }
 }
 
-fn draw_node<W: io::Write>(
+fn render_node<W: io::Write>(
     w: &mut W,
     depth: usize,
     node: &Node,
@@ -119,7 +119,7 @@ fn render_children<W: io::Write>(
                 should_highlight = true;
             }
 
-            draw_node(
+            render_node(
                 w,
                 depth,
                 ch,
@@ -153,21 +153,14 @@ fn render_children<W: io::Write>(
     Ok(lines_capacity)
 }
 
-fn get_object_repr<O: FsObject>(obj: &O) -> String {
-    return format!("> {}", obj.fullpath());
-}
-
 fn render_top_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
 {
     if let Some(node) = app.root.get_selected_node_by_location(app.loc.clone()) {
-        match **node {
-            Node::Dir(ref d) => queue!(w, style::Print(get_object_repr(d)))?,
-            Node::File(ref f) => queue!(w, style::Print(get_object_repr(f)))?,
-        };
         queue!(
             w,
+            style::Print(node.get_full_path()),
             terminal::Clear(terminal::ClearType::UntilNewLine),
             cursor::MoveToNextLine(1),
             terminal::Clear(terminal::ClearType::UntilNewLine),
