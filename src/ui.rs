@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 
 use std::{
     io,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -15,6 +16,8 @@ use crossterm::{
 pub struct AppState {
     loc: Location,
     root: DirInfo,
+    cp_from: Option<String>,
+    bottom_satatus: String,
 }
 
 const MAX_CHILD_RENDERED: usize = 7;
@@ -27,6 +30,8 @@ impl AppState {
         Self {
             loc: VecDeque::new(),
             root: DirInfo::new_from_fs(path),
+            cp_from: None,
+            bottom_satatus: String::from("--"),
         }
     }
 }
@@ -139,7 +144,7 @@ fn render_children<W: io::Write>(
                     depth + 1,
                     highlight_next,
                     lines_capacity,
-                    lines_capacity.saturating_sub(2).min(MAX_CHILD_RENDERED),
+                    lines_capacity.saturating_sub(1).min(MAX_CHILD_RENDERED),
                 )?;
             }
             queue!(w, style::ResetColor)?;
@@ -156,7 +161,7 @@ fn render_top_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
 {
-    if let Some(node) = app.root.get_node_by_location(app.loc.clone()) {
+    if let Some(node) = app.root.get_selected_node_by_location(app.loc.clone()) {
         match **node {
             Node::Dir(ref d) => queue!(w, style::Print(get_object_repr(d)))?,
             Node::File(ref f) => queue!(w, style::Print(get_object_repr(f)))?,
@@ -169,6 +174,23 @@ where
             cursor::MoveToNextLine(1)
         )?;
     }
+    Ok(())
+}
+
+fn render_bottom_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    let s = match app.cp_from {
+        Some(ref p) => format!("Copying: {}", p),
+        None => app.bottom_satatus.clone(),
+    };
+    queue!(
+        w,
+        style::Print(s),
+        terminal::Clear(terminal::ClearType::UntilNewLine),
+        cursor::MoveToNextLine(1),
+    )?;
     Ok(())
 }
 
@@ -196,6 +218,8 @@ where
             cursor::MoveToNextLine(1),
         )?;
     }
+    render_bottom_bar(&app, w)?;
+
     w.flush()?;
     Ok(())
 }
@@ -228,11 +252,28 @@ where
 fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => return Err(()),
+        KeyCode::Char('y') => {
+            if let Some(node) = app.root.get_selected_node_by_location(app.loc.clone()) {
+                app.cp_from = Some(node.get_full_path());
+            }
+        }
+        KeyCode::Char('p') => {
+            let to_dir = app.root.get_dir_by_location_mut(app.loc.clone());
+            if let Some(ref from) = app.cp_from {
+                Command::new("cp")
+                    .args([from, &to_dir.fullpath])
+                    .output()
+                    .expect("failed to copy");
+                app.bottom_satatus = format!("Copied: {} -> {}", from, &to_dir.fullpath);
+                app.cp_from = None;
+                to_dir.read_from_fs();
+            }
+        }
         KeyCode::Left | KeyCode::Char('h') => {
             _ = app.loc.pop_back();
         }
         KeyCode::Right | KeyCode::Char('l') => {
-            if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
+            if let Some(node) = app.root.get_selected_node_by_location_mut(app.loc.clone()) {
                 match **node {
                     Node::Dir(ref mut d) => {
                         d.read_children();
@@ -267,7 +308,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
             }
         }
         KeyCode::Enter => {
-            if let Some(node) = app.root.get_node_by_location_mut(app.loc.clone()) {
+            if let Some(node) = app.root.get_selected_node_by_location_mut(app.loc.clone()) {
                 match **node {
                     Node::Dir(ref mut d) => d.collapse_or_expand(),
                     Node::File(_) => (),

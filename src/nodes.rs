@@ -7,6 +7,14 @@ pub enum Node {
     Dir(DirInfo),
     File(FileInfo),
 }
+impl Node {
+    pub fn get_full_path(&self) -> String {
+        match self {
+            Node::Dir(dirinfo) => dirinfo.fullpath.clone(),
+            Node::File(finfo) => finfo.fullpath.clone(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ChildrenState {
@@ -79,7 +87,7 @@ impl DirInfo {
         return s;
     }
 
-    fn read_from_fs(&mut self) {
+    pub fn read_from_fs(&mut self) {
         let mut children = vec![];
         let mut paths = fs::read_dir(&self.fullpath).unwrap(); // TODO
         while let Some(child) = paths.next() {
@@ -126,12 +134,15 @@ impl DirInfo {
         }
     }
 
-    pub fn get_node_by_location_mut(&mut self, mut loc: Location) -> Option<&mut Box<Node>> {
+    pub fn get_selected_node_by_location_mut(
+        &mut self,
+        mut loc: Location,
+    ) -> Option<&mut Box<Node>> {
         match self.children {
             Children::Some(ref mut chs) => {
                 if let Some(l) = loc.pop_front() {
                     match **chs.list.get_mut(l).unwrap() {
-                        Node::Dir(ref mut d) => d.get_node_by_location_mut(loc),
+                        Node::Dir(ref mut d) => d.get_selected_node_by_location_mut(loc),
                         _ => panic!("Not a directory"),
                     }
                 } else {
@@ -142,12 +153,26 @@ impl DirInfo {
         }
     }
 
-    pub fn get_node_by_location(&self, mut loc: Location) -> Option<&Box<Node>> {
+    pub fn get_dir_by_location_mut(&mut self, mut loc: Location) -> &mut DirInfo {
+        if let Some(l) = loc.pop_front() {
+            match self.children {
+                Children::Some(ref mut chs) => match **chs.list.get_mut(l).unwrap() {
+                    Node::Dir(ref mut d) => d.get_dir_by_location_mut(loc),
+                    _ => panic!("Not a directory"),
+                },
+                Children::None | Children::Unread => panic!("No children with non-empty location"),
+            }
+        } else {
+            return self;
+        }
+    }
+
+    pub fn get_selected_node_by_location(&self, mut loc: Location) -> Option<&Box<Node>> {
         match self.children {
             Children::Some(ref chs) => {
                 if let Some(l) = loc.pop_front() {
                     match **chs.list.get(l).unwrap() {
-                        Node::Dir(ref d) => d.get_node_by_location(loc),
+                        Node::Dir(ref d) => d.get_selected_node_by_location(loc),
                         _ => panic!("Not a directory"),
                     }
                 } else {
