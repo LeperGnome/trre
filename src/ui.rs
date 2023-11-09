@@ -10,7 +10,9 @@ use std::{
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent},
-    queue, style, terminal,
+    queue, style,
+    style::Stylize,
+    terminal,
 };
 
 pub struct AppState {
@@ -44,15 +46,14 @@ fn render_node<W: io::Write>(
     more_up: bool,
     more_down: bool,
 ) -> io::Result<()> {
-    let (name, fgcolor) = match *node {
-        Node::Dir(ref dir) => (format!("{}/", dir.name), style::Color::Magenta),
-        Node::File(ref f) => (f.name.clone(), style::Color::White),
+    let mut name = match *node {
+        Node::Dir(ref dir) => format!("{}/", dir.name).magenta(),
+        Node::File(ref f) => f.name.clone().white(),
     };
 
-    let bgcolor = match highlight {
-        true => style::Color::DarkGrey,
-        false => style::Color::Black,
-    };
+    if highlight {
+        name = name.black().on_white();
+    }
 
     let padding: String;
 
@@ -65,10 +66,8 @@ fn render_node<W: io::Write>(
     }
     queue!(
         w,
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(style::Color::Grey),
         style::Print(padding),
-        style::SetForegroundColor(fgcolor),
-        style::SetBackgroundColor(bgcolor),
         style::Print(name),
         style::ResetColor,
         terminal::Clear(terminal::ClearType::UntilNewLine),
