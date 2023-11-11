@@ -203,10 +203,9 @@ impl DirInfo {
                     if let Some(ch) = chs.list.get(l) {
                         match **ch {
                             Node::Dir(ref d) => d.get_children_len_by_location(loc),
-                            Node::File(_) => 0, // TODO error?
+                            Node::File(_) => 0,
                         }
                     } else {
-                        // TODO child not found
                         0
                     }
                 } else {
