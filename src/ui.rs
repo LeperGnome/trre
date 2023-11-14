@@ -15,10 +15,15 @@ use crossterm::{
     terminal,
 };
 
+enum OpType {
+    Copy(String),
+    Cut(String),
+}
+
 pub struct AppState {
     loc: Location,
     root: DirInfo,
-    cp_from: Option<String>,
+    op_buff: Option<OpType>,
     bottom_satatus: String,
 }
 
@@ -32,7 +37,7 @@ impl AppState {
         Self {
             loc: VecDeque::new(),
             root: DirInfo::new_from_fs(path),
-            cp_from: None,
+            op_buff: None,
             bottom_satatus: String::from("--"),
         }
     }
@@ -173,8 +178,11 @@ fn render_bottom_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
 {
-    let s = match app.cp_from {
-        Some(ref p) => format!("Copying: {}", p),
+    let s = match app.op_buff {
+        Some(ref o) => match o {
+            OpType::Copy(ref s) => format!("Copying: {}", s),
+            OpType::Cut(ref s) => format!("Moving: {}", s),
+        },
         None => app.bottom_satatus.clone(),
     };
     queue!(
@@ -244,21 +252,42 @@ where
 fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => return Err(()),
+        KeyCode::Char('d') => {
+            if let Some(node) = app.root.get_selected_node_by_location(app.loc.clone()) {
+                app.op_buff = Some(OpType::Cut(node.get_full_path()));
+            }
+        }
         KeyCode::Char('y') => {
             if let Some(node) = app.root.get_selected_node_by_location(app.loc.clone()) {
-                app.cp_from = Some(node.get_full_path());
+                app.op_buff = Some(OpType::Copy(node.get_full_path()));
             }
         }
         KeyCode::Char('p') => {
             let to_dir = app.root.get_dir_by_location_mut(app.loc.clone());
-            if let Some(ref from) = app.cp_from {
-                Command::new("cp")
-                    .args([from, &to_dir.fullpath])
-                    .output()
-                    .expect("failed to copy");
-                app.bottom_satatus = format!("Copied: {} -> {}", from, &to_dir.fullpath);
-                app.cp_from = None;
-                to_dir.read_from_fs();
+            if let Some(ref op) = app.op_buff {
+                match op {
+                    OpType::Copy(from) => {
+                        Command::new("cp")
+                            .args([from, &to_dir.fullpath])
+                            .output()
+                            .expect("failed to copy");
+                        app.bottom_satatus = format!("Copied: {} -> {}", from, &to_dir.fullpath);
+                        app.op_buff = None;
+                        // TODO: refresh non-recursive (dirs need to keep read content)
+                        to_dir.read_from_fs();
+                    }
+                    OpType::Cut(from) => {
+                        Command::new("mv")
+                            .args([from, &to_dir.fullpath])
+                            .output()
+                            .expect("failed to copy");
+                        app.bottom_satatus = format!("Moved: {} -> {}", from, &to_dir.fullpath);
+                        app.op_buff = None;
+                        // TODO: refresh non-recursive (dirs need to keep read content)
+                        to_dir.read_from_fs();
+                        // TODO: refresh 'from' dir
+                    }
+                }
             }
         }
         KeyCode::Left | KeyCode::Char('h') => {
