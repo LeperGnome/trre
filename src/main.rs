@@ -137,7 +137,7 @@
 mod nodes;
 mod ui;
 
-use std::{error::Error, io, time::Duration};
+use std::{env::args, error::Error, io, time::Duration};
 
 use crossterm::{
     cursor, execute,
@@ -145,17 +145,20 @@ use crossterm::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    //
-    // TODO:
-    // 1. need to refactor Location. is this really a good idea to have it?
-    //
+    let dir: String;
+
+    match args().collect::<Vec<String>>().get(1) {
+        Some(s) => dir = s.clone(),
+        None => dir = String::from("./"),
+    }
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::MoveTo(0, 0),)?;
 
     let tick_rate = Duration::from_millis(100);
 
-    let state = ui::AppState::new_from_fs("./");
+    let state = ui::AppState::new_from_fs(&dir);
     let res = ui::run_app(state, &mut stdout, tick_rate);
 
     // restore terminal
