@@ -273,8 +273,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
                             .expect("failed to copy");
                         app.bottom_satatus = format!("Copied: {} -> {}", from, &to_dir.fullpath);
                         app.op_buff = None;
-                        // TODO: refresh non-recursive (dirs need to keep read content)
-                        to_dir.read_from_fs();
+                        to_dir.refresh();
                     }
                     OpType::Cut(from) => {
                         Command::new("mv")
@@ -283,8 +282,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
                             .expect("failed to copy");
                         app.bottom_satatus = format!("Moved: {} -> {}", from, &to_dir.fullpath);
                         app.op_buff = None;
-                        // TODO: refresh non-recursive (dirs need to keep read content)
-                        to_dir.read_from_fs();
+                        to_dir.refresh();
                         // TODO: refresh 'from' dir
                     }
                 }
@@ -297,7 +295,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
             if let Some(node) = app.root.get_selected_node_by_location_mut(app.loc.clone()) {
                 match **node {
                     Node::Dir(ref mut d) => {
-                        d.read_children();
+                        d.refresh();
                         match d.children {
                             Children::Some(_) => {
                                 if let Some(deep_current) =
@@ -309,7 +307,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
                             Children::None | Children::Unread => (),
                         }
                     }
-                    Node::File(_) => (), // TODO ?
+                    Node::File(_) => (),
                 }
             };
         }

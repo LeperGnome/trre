@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fs};
 
 pub type Location = VecDeque<usize>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Dir(DirInfo),
     File(FileInfo),
@@ -16,7 +16,7 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChildrenState {
     pub list: Vec<Box<Node>>,
     pub selected: usize,
@@ -31,21 +31,27 @@ impl From<Vec<Box<Node>>> for ChildrenState {
     }
 }
 
-#[derive(Debug)]
+impl ChildrenState {
+    fn get_node_by_fullpath(&self, fullpath: &str) -> Option<&Box<Node>> {
+        return self.list.iter().find(|&n| n.get_full_path() == fullpath);
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Children {
     Some(ChildrenState),
     None,
     Unread,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirInfo {
     pub children: Children,
     pub fullpath: String,
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileInfo {
     pub fullpath: String,
     pub name: String,
@@ -58,18 +64,41 @@ impl DirInfo {
             name: path.into(),
             children: Children::None,
         };
-        s.read_from_fs();
+        s.refresh();
         return s;
     }
 
-    pub fn read_from_fs(&mut self) {
+    pub fn refresh(&mut self) {
+        let mut new_children = ChildrenState::from(self.read_children());
+        match self.children {
+            Children::Unread | Children::None => {
+                if new_children.list.len() > 0 {
+                    self.children = Children::Some(new_children);
+                } else {
+                    self.children = Children::None;
+                }
+            }
+            Children::Some(ref mut cur_chs) => {
+                for i in 0..new_children.list.len() {
+                    if let Some(node) =
+                        cur_chs.get_node_by_fullpath(&new_children.list[i].get_full_path())
+                    {
+                        new_children.list[i] = node.clone()
+                    }
+                }
+                cur_chs.list = new_children.list
+            }
+        }
+    }
+
+    fn read_children(&self) -> Vec<Box<Node>> {
         let mut children = vec![];
-        let mut paths = fs::read_dir(&self.fullpath).unwrap(); // TODO
+        let mut paths = fs::read_dir(&self.fullpath).unwrap();
         while let Some(child) = paths.next() {
-            let child = child.unwrap(); // TODO
-            let name = child.file_name().into_string().unwrap(); // TODO
+            let child = child.unwrap();
+            let name = child.file_name().into_string().unwrap();
             let cpath = child.path();
-            let cpath = cpath.to_str().unwrap(); // TODO
+            let cpath = cpath.to_str().unwrap();
 
             match child.file_type() {
                 Ok(t) if t.is_dir() => {
@@ -88,24 +117,14 @@ impl DirInfo {
                 Ok(_) | Err(_) => continue,
             }
         }
-        if children.len() > 0 {
-            self.children = Children::Some(ChildrenState::from(children));
-        } else {
-            self.children = Children::None;
-        }
+        return children;
     }
 
     pub fn collapse_or_expand(&mut self) {
         match self.children {
-            Children::Unread => self.read_children(),
+            Children::Unread => self.refresh(),
             Children::Some(_) => self.children = Children::Unread,
             Children::None => (),
-        }
-    }
-
-    pub fn read_children(&mut self) {
-        if matches!(self.children, Children::Unread) {
-            self.read_from_fs();
         }
     }
 
