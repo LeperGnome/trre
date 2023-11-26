@@ -1,3 +1,4 @@
+mod arenatree;
 mod nodes;
 mod ui;
 
