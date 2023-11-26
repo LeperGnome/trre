@@ -86,82 +86,6 @@ fn render_node<W: io::Write>(
     Ok(())
 }
 
-// fn render_children<W: io::Write>(
-//     w: &mut W,
-//     current: usize,
-//     children: &Vec<usize>,
-//     depth: usize,
-//     mut lines_capacity: usize,
-//     max_children: usize,
-// ) -> io::Result<usize> {
-//     if children.len() == 0 {
-//         return Ok(lines_capacity);
-//     }
-//     let mut more_up: bool = false;
-//     let mut more_down: bool = false;
-//     if chs.selected >= max_children {
-//         more_up = true;
-//     }
-//     if chs.list.len() > max_children && chs.selected != chs.list.len() - 1 {
-//         more_down = true;
-//     }
-//     let local_loc = loc.pop_front();
-// 
-//     let mut skip_n: usize = 0;
-//     if chs.selected >= max_children {
-//         skip_n = chs.selected - max_children + 1;
-//     }
-//     for (idx, (gid, ch)) in chs
-//         .list
-//         .iter()
-//         .enumerate()
-//         .skip(skip_n)
-//         .enumerate()
-//         .take(max_children)
-//     {
-//         if lines_capacity == 0 {
-//             break;
-//         }
-// 
-//         let mut should_highlight = false;
-//         if gid == chs.selected && in_selected_branch && matches!(local_loc, None) {
-//             // i'm a selected node!
-//             should_highlight = true;
-//         }
-// 
-//         render_node(
-//             w,
-//             depth,
-//             ch,
-//             should_highlight,
-//             more_up && idx == 0,
-//             more_down && idx == max_children - 1,
-//         )?;
-// 
-//         lines_capacity = lines_capacity.saturating_sub(1);
-// 
-//         if let ONode::Dir(ref dir) = **ch {
-//             let highlight_next;
-//             if let Some(l) = local_loc {
-//                 highlight_next = l == idx;
-//             } else {
-//                 highlight_next = false;
-//             }
-//             lines_capacity = render_children(
-//                 w,
-//                 &dir.children,
-//                 loc.clone(),
-//                 depth + 1,
-//                 highlight_next,
-//                 lines_capacity,
-//                 lines_capacity.saturating_sub(1).min(MAX_CHILD_RENDERED),
-//             )?;
-//         }
-//         queue!(w, style::ResetColor)?;
-//     }
-//     Ok(lines_capacity)
-// }
-
 fn render_top_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
@@ -200,6 +124,28 @@ where
     Ok(())
 }
 
+fn render_tree<W>(
+    w: &mut W,
+    tree: &ArenaTree,
+    idx: usize,
+    depth: usize,
+    mut lines_left: usize,
+) -> io::Result<usize>
+where
+    W: io::Write,
+{
+    let current = tree.get(idx);
+    if lines_left == 0 {
+        return Ok(lines_left);
+    }
+    lines_left -= 1;
+    render_node(w, depth, current, tree.current == idx, false, false)?;
+    for chidx in tree.get(idx).children.iter() {
+        lines_left = render_tree(w, tree, *chidx, depth + 1, lines_left)?;
+    }
+    return Ok(lines_left);
+}
+
 fn render<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
@@ -207,20 +153,8 @@ where
     queue!(w, cursor::Hide, style::ResetColor, cursor::MoveTo(0, 0))?;
 
     render_top_bar(app, w)?;
-    for node in app.tree.arena.iter() {
-        render_node(w, 0, node, false, false, false)?;
-    }
-    // let lines_left = render_children(
-    //     w,
-    //     &app.root.children,
-    //     app.loc.clone(),
-    //     1,
-    //     true,
-    //     terminal::size().unwrap().1 as usize - 3,
-    //     terminal::size().unwrap().1 as usize - 3,
-    // )?;
-    for _ in 0..=terminal::size().unwrap().1 as usize - 3 {
-    // for _ in 0..=lines_left {
+    let lines_left = render_tree(w, &app.tree, 0, 0, terminal::size().unwrap().1 as usize - 3)?;
+    for _ in 0..=lines_left {
         queue!(
             w,
             style::Print("~"),
@@ -307,7 +241,9 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
             if !app.tree.get_current().is_dir {
                 return Ok(());
             }
-            app.tree.read_children(app.tree.get_current().idx);
+            if app.tree.get_current().children.len() == 0 {
+                app.tree.read_children(app.tree.get_current().idx);
+            }
             let node = app.tree.get_current();
             if node.children.len() == 0 {
                 return Ok(());

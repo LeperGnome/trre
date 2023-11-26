@@ -47,16 +47,8 @@ impl ArenaTree {
         return &self.arena[self.current];
     }
 
-    pub fn get_current_mut(&mut self) -> &mut Node {
-        return &mut self.arena[self.current];
-    }
-
     pub fn get(&self, idx: usize) -> &Node {
         return &self.arena[idx];
-    }
-
-    pub fn get_mut(&mut self, idx: usize) -> &mut Node {
-        return &mut self.arena[idx];
     }
 
     pub fn remove_children(&mut self, idx: usize) {

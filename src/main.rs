@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     match args().collect::<Vec<String>>().get(1) {
         Some(s) => dir = s.clone(),
-        None => dir = String::from("./"),
+        None => dir = String::from("."),
     }
 
     enable_raw_mode()?;
