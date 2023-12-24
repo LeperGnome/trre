@@ -18,7 +18,7 @@ use crossterm::{
 
 enum OpType {
     Copy(usize),
-    Cut(usize),
+    Cut(usize, usize),
 }
 
 pub struct AppState {
@@ -35,7 +35,9 @@ const PADDING_MORE_DOWN: &str = "▼  ";
 impl AppState {
     pub fn new_from_fs(path: &str) -> Self {
         let mut tree = ArenaTree::new(path);
-        tree.read_children(0);
+        if let Err(_) = tree.read_children(0) {
+            panic!("Error reading children");
+        };
 
         if tree.get(0).children.len() > 0 {
             tree.current = 0;
@@ -242,7 +244,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
                 return Ok(());
             }
             if app.tree.get_current().children.len() == 0 {
-                app.tree.read_children(app.tree.get_current().idx);
+                let _ = app.tree.read_children(app.tree.get_current().idx);
             }
             let node = app.tree.get_current();
             if node.children.len() == 0 {
@@ -267,7 +269,7 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
         KeyCode::Enter => {
             let node = app.tree.get_current();
             if node.children.len() == 0 {
-                app.tree.read_children(node.idx);
+                let _ = app.tree.read_children(node.idx);
             } else {
                 app.tree.remove_children(node.idx);
             }

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 
 pub struct Node {
@@ -52,7 +53,9 @@ impl ArenaTree {
     }
 
     pub fn remove_children(&mut self, idx: usize) {
-        self.arena[idx].children = vec![];
+        while let Some(rm_idx) = self.arena[idx].children.pop() {
+            self.arena.remove(rm_idx);
+        }
     }
 
     pub fn read_children(&mut self, idx: usize) -> Result<(), String> {
@@ -62,32 +65,43 @@ impl ArenaTree {
         if !self.arena[idx].is_dir {
             return Err("Selected node is a file".into());
         }
-        let mut children_paths = fs::read_dir(&self.arena[idx].fullpath).unwrap();
+        let mut children_uninit = fs::read_dir(&self.arena[idx].fullpath)
+            .unwrap()
+            .map(|child| {
+                let child = child.unwrap();
+                let is_dir: bool;
+                match child.file_type() {
+                    Ok(t) if t.is_dir() => is_dir = true,
+                    _ => is_dir = false,
+                }
+                Node {
+                    idx: 0, // not setting proper id here, because elements are unsorted
+                    parent: Some(idx),
+                    children: vec![],
+                    fullpath: child.path().to_str().unwrap().into(),
+                    is_dir,
+                    name: child.file_name().into_string().unwrap(),
+                }
+            })
+            .collect::<Vec<Node>>();
 
-        while let Some(child) = children_paths.next() {
-            let child = child.unwrap();
-            let name = child.file_name().into_string().unwrap();
-            let path = child.path().to_str().unwrap().to_string();
-            let is_dir: bool;
-
-            match child.file_type() {
-                Ok(t) if t.is_dir() => is_dir = true,
-                _ => is_dir = false,
+        children_uninit.sort_by(|a, b| {
+            if a.is_dir ^ b.is_dir {
+                if a.is_dir {
+                    return Ordering::Less;
+                }
+                return Ordering::Greater;
             }
+            a.name.cmp(&b.name)
+        });
 
-            let new_idx = self.arena.len();
-
-            // TODO: they can already exist
-            self.arena.push(Node {
-                idx: new_idx,
-                parent: Some(idx),
-                children: vec![],
-                fullpath: path.into(),
-                is_dir,
-                name,
-            });
+        for (chidx, child) in children_uninit.iter_mut().enumerate() {
+            let new_idx = self.arena.len() + chidx;
             self.arena[idx].children.push(new_idx);
+            child.idx = new_idx;
         }
+
+        self.arena.append(&mut children_uninit);
         Ok(())
     }
 }
