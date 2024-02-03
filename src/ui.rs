@@ -40,7 +40,7 @@ impl AppState {
         };
 
         if tree.get(0).children.len() > 0 {
-            tree.current = 0;
+            tree.selected = 0;
         }
         Self {
             tree,
@@ -92,7 +92,7 @@ fn render_top_bar<W>(app: &AppState, w: &mut W) -> io::Result<()>
 where
     W: io::Write,
 {
-    let node = app.tree.get_current();
+    let node = app.tree.get_selected();
     queue!(
         w,
         style::Print(&node.fullpath),
@@ -132,20 +132,31 @@ fn render_tree<W>(
     idx: usize,
     depth: usize,
     mut lines_left: usize,
-) -> io::Result<usize>
+    mut reached_selected: bool,
+) -> io::Result<(usize, bool)>
 where
     W: io::Write,
 {
     let current = tree.get(idx);
+    if current.idx == tree.selected {
+        reached_selected = true;
+    }
     if lines_left == 0 {
-        return Ok(lines_left);
+        return Ok((lines_left, reached_selected));
     }
+
+    let subtree_len = tree.get_subtree_len(idx);
+    if subtree_len >= lines_left && !reached_selected {
+        // skipping large subtree
+        return Ok((lines_left, reached_selected));
+    }
+
     lines_left -= 1;
-    render_node(w, depth, current, tree.current == idx, false, false)?;
+    render_node(w, depth, current, tree.selected == idx, false, false)?;
     for chidx in tree.get(idx).children.iter() {
-        lines_left = render_tree(w, tree, *chidx, depth + 1, lines_left)?;
+        (lines_left, reached_selected) = render_tree(w, tree, *chidx, depth + 1, lines_left, reached_selected)?;
     }
-    return Ok(lines_left);
+    return Ok((lines_left, reached_selected));
 }
 
 fn render<W>(app: &AppState, w: &mut W) -> io::Result<()>
@@ -155,7 +166,14 @@ where
     queue!(w, cursor::Hide, style::ResetColor, cursor::MoveTo(0, 0))?;
 
     render_top_bar(app, w)?;
-    let lines_left = render_tree(w, &app.tree, 0, 0, terminal::size().unwrap().1 as usize - 3)?;
+    let (lines_left, _) = render_tree(
+        w,
+        &app.tree,
+        0,
+        0,
+        terminal::size().unwrap().1 as usize - 3,
+        false,
+    )?;
     for _ in 0..=lines_left {
         queue!(
             w,
@@ -235,39 +253,39 @@ fn process_key(app: &mut AppState, key: KeyEvent) -> Result<(), ()> {
         //     }
         // }
         KeyCode::Left | KeyCode::Char('h') => {
-            if let Some(parent) = app.tree.get(app.tree.current).parent {
-                app.tree.current = parent;
+            if let Some(parent) = app.tree.get(app.tree.selected).parent {
+                app.tree.selected = parent;
             }
         }
         KeyCode::Right | KeyCode::Char('l') => {
-            if !app.tree.get_current().is_dir {
+            if !app.tree.get_selected().is_dir {
                 return Ok(());
             }
-            if app.tree.get_current().children.len() == 0 {
-                let _ = app.tree.read_children(app.tree.get_current().idx);
+            if app.tree.get_selected().children.len() == 0 {
+                let _ = app.tree.read_children(app.tree.get_selected().idx);
             }
-            let node = app.tree.get_current();
+            let node = app.tree.get_selected();
             if node.children.len() == 0 {
                 return Ok(());
             }
-            app.tree.current = node.children[0];
+            app.tree.selected = node.children[0];
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if let Some(parent) = app.tree.get_current().parent {
-                if let Some(next_child) = app.tree.get(parent).next_child(app.tree.current) {
-                    app.tree.current = next_child;
+            if let Some(parent) = app.tree.get_selected().parent {
+                if let Some(next_child) = app.tree.get(parent).next_child(app.tree.selected) {
+                    app.tree.selected = next_child;
                 }
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if let Some(parent) = app.tree.get_current().parent {
-                if let Some(prev_child) = app.tree.get(parent).previous_child(app.tree.current) {
-                    app.tree.current = prev_child;
+            if let Some(parent) = app.tree.get_selected().parent {
+                if let Some(prev_child) = app.tree.get(parent).previous_child(app.tree.selected) {
+                    app.tree.selected = prev_child;
                 }
             }
         }
         KeyCode::Enter => {
-            let node = app.tree.get_current();
+            let node = app.tree.get_selected();
             if node.children.len() == 0 {
                 let _ = app.tree.read_children(node.idx);
             } else {

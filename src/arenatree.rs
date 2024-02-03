@@ -26,13 +26,13 @@ impl Node {
 
 pub struct ArenaTree {
     pub arena: Vec<Node>,
-    pub current: usize,
+    pub selected: usize,
 }
 
 impl ArenaTree {
     pub fn new(path: &str) -> Self {
         return Self {
-            current: 0,
+            selected: 0,
             arena: vec![Node {
                 idx: 0,
                 parent: None,
@@ -44,12 +44,20 @@ impl ArenaTree {
         };
     }
 
-    pub fn get_current(&self) -> &Node {
-        return &self.arena[self.current];
+    pub fn get_selected(&self) -> &Node {
+        return &self.arena[self.selected];
     }
 
     pub fn get(&self, idx: usize) -> &Node {
         return &self.arena[idx];
+    }
+
+    pub fn get_subtree_len(&self, idx: usize) -> usize {
+        let mut len = 0_usize;
+        for child_idx in self.arena[idx].children.iter() {
+            len += self.get_subtree_len(*child_idx);
+        }
+        return len;
     }
 
     pub fn remove_children(&mut self, idx: usize) {
